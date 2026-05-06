@@ -10,10 +10,12 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Build Docker image
       run: |
@@ -41,4 +43,4 @@ jobs:
 
     - name: Test executable
       run: |
-        timeout --signal=SIGINT 5 ./dist/autoeq_api || echo "Test completed - service started successfully"
+        timeout --signal=SIGINT 5 ./dist/autoeq_api || echo "Test completed"
