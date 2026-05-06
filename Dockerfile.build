@@ -1,13 +1,11 @@
-# AutoEq 构建镜像 - 基于 Rocky Linux 8
-# 用于构建兼容旧版GLIBC的Linux可执行文件
-# 替代已停止维护的 CentOS 7
+FROM centos:7
 
-FROM rockylinux:8
-
-# 安装构建工具和依赖
-RUN dnf install -y epel-release && \
-    dnf update -y && \
-    dnf install -y \
+RUN sed -i 's|^mirrorlist=|#mirrorlist=|g' /etc/yum.repos.d/CentOS-*.repo && \
+    sed -i 's|^#baseurl=http://mirror\.centos\.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*.repo && \
+    yum install -y epel-release && \
+    sed -i 's|^metalink|#metalink|g' /etc/yum.repos.d/epel*.repo && \
+    sed -i 's|^#baseurl=https\?://download\.fedoraproject\.org/pub/epel|baseurl=https://archives.fedoraproject.org/pub/archive/epel|g' /etc/yum.repos.d/epel*.repo && \
+    yum install -y \
         python3 \
         python3-devel \
         python3-pip \
@@ -15,58 +13,52 @@ RUN dnf install -y epel-release && \
         gcc-c++ \
         make \
         libsndfile-devel \
+        wget \
         which \
-        file
+        file && \
+    yum clean all
 
-# 安装pip
-RUN python3 -m ensurepip --upgrade && \
-    python3 -m pip install --upgrade pip
+RUN python3 -m pip install --upgrade pip && \
+    pip3 install \
+        numpy \
+        scipy \
+        matplotlib \
+        Pillow \
+        pyyaml \
+        tabulate \
+        soundfile \
+        tqdm \
+        uvicorn \
+        fastapi \
+        python-multipart \
+        pyinstaller
 
-# 安装Python依赖
-RUN pip3 install \
-    numpy \
-    scipy \
-    matplotlib \
-    Pillow \
-    pyyaml \
-    tabulate \
-    soundfile \
-    tqdm \
-    uvicorn \
-    fastapi \
-    python-multipart \
-    pyinstaller
-
-# 设置工作目录
 WORKDIR /build
-
-# 复制项目文件
 COPY . /build/
 
-# 安装AutoEq
-RUN pip3 install -e .
-
-# 构建可执行文件
-RUN python3 -m PyInstaller --onefile --name autoeq_api \
-    --add-data "autoeq/*.py:autoeq" \
-    --hidden-import=autoeq \
-    --hidden-import=autoeq.api \
-    --hidden-import=autoeq.batch_processing \
-    --hidden-import=autoeq.constants \
-    --hidden-import=autoeq.csv \
-    --hidden-import=autoeq.frequency_response \
-    --hidden-import=autoeq.peq \
-    --hidden-import=autoeq.rest_api \
-    --hidden-import=autoeq.utils \
-    --hidden-import=uvicorn \
-    --hidden-import=fastapi \
-    --hidden-import=numpy \
-    --hidden-import=scipy \
-    --hidden-import=matplotlib \
-    --hidden-import=PIL \
-    --hidden-import=yaml \
-    --hidden-import=tabulate \
-    --hidden-import=soundfile \
-    --hidden-import=tqdm \
-    main.py && \
+RUN pip3 install -e . && \
+    python3 -m PyInstaller \
+        --onefile \
+        --name autoeq_api \
+        --add-data "autoeq/*.py:autoeq" \
+        --hidden-import=autoeq \
+        --hidden-import=autoeq.api \
+        --hidden-import=autoeq.batch_processing \
+        --hidden-import=autoeq.constants \
+        --hidden-import=autoeq.csv \
+        --hidden-import=autoeq.frequency_response \
+        --hidden-import=autoeq.peq \
+        --hidden-import=autoeq.rest_api \
+        --hidden-import=autoeq.utils \
+        --hidden-import=uvicorn \
+        --hidden-import=fastapi \
+        --hidden-import=numpy \
+        --hidden-import=scipy \
+        --hidden-import=matplotlib \
+        --hidden-import=PIL \
+        --hidden-import=yaml \
+        --hidden-import=tabulate \
+        --hidden-import=soundfile \
+        --hidden-import=tqdm \
+        main.py && \
     chmod 755 /build/dist/autoeq_api
