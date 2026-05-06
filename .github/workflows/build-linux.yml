@@ -6,70 +6,64 @@ on:
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
-    inputs:
-      reason:
-        description: 'Build reason'
-        required: false
-        default: 'Manual build'
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
-    
+    runs-on: ubuntu-latest
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
-    - name: Build with CentOS 7 Docker
-      uses: addnab/docker-run-action@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
       with:
-        image: centos:7
-        options: -v ${{ github.workspace }}:/app
-        run: |
-          # Install EPEL and dependencies
-          yum install -y epel-release
-          yum install -y python3 python3-devel gcc gcc-c++ libsndfile-devel make
+        python-version: '3.11'
 
-          # Install pip
-          python3 -m ensurepip --upgrade
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libsndfile1 libopenblas-dev gfortran
 
-          # Install Python dependencies
-          pip3 install --upgrade pip
-          pip3 install numpy scipy matplotlib Pillow pyyaml tabulate soundfile tqdm uvicorn fastapi python-multipart pyinstaller
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install numpy scipy matplotlib Pillow pyyaml tabulate soundfile tqdm uvicorn fastapi python-multipart pyinstaller
 
-          # Install AutoEq package
-          cd /app
-          pip3 install -e .
+    - name: Install AutoEq package
+      run: |
+        pip install -e .
 
-          # Build executable with PyInstaller
-          python3 -m PyInstaller --onefile --name autoeq_api \
-            --add-data "autoeq/*.py:autoeq" \
-            --hidden-import=autoeq \
-            --hidden-import=autoeq.api \
-            --hidden-import=autoeq.batch_processing \
-            --hidden-import=autoeq.constants \
-            --hidden-import=autoeq.csv \
-            --hidden-import=autoeq.frequency_response \
-            --hidden-import=autoeq.peq \
-            --hidden-import=autoeq.rest_api \
-            --hidden-import=autoeq.utils \
-            --hidden-import=uvicorn \
-            --hidden-import=fastapi \
-            --hidden-import=numpy \
-            --hidden-import=scipy \
-            --hidden-import=matplotlib \
-            --hidden-import=PIL \
-            --hidden-import=yaml \
-            --hidden-import=tabulate \
-            --hidden-import=soundfile \
-            --hidden-import=tqdm \
-            main.py
-          
+    - name: Build executable with PyInstaller
+      run: |
+        python -m PyInstaller --onefile --name autoeq_api \
+          --add-data "autoeq/*.py:autoeq" \
+          --hidden-import=autoeq \
+          --hidden-import=autoeq.api \
+          --hidden-import=autoeq.batch_processing \
+          --hidden-import=autoeq.constants \
+          --hidden-import=autoeq.csv \
+          --hidden-import=autoeq.frequency_response \
+          --hidden-import=autoeq.peq \
+          --hidden-import=autoeq.rest_api \
+          --hidden-import=autoeq.utils \
+          --hidden-import=uvicorn \
+          --hidden-import=fastapi \
+          --hidden-import=numpy \
+          --hidden-import=scipy \
+          --hidden-import=matplotlib \
+          --hidden-import=PIL \
+          --hidden-import=yaml \
+          --hidden-import=tabulate \
+          --hidden-import=soundfile \
+          --hidden-import=tqdm \
+          main.py
+
     - name: Verify build
       run: |
         ls -la dist/
         file dist/autoeq_api
-        
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
@@ -77,7 +71,7 @@ jobs:
         path: dist/autoeq_api
         retention-days: 30
         if-no-files-found: error
-        
+
     - name: Test executable
       run: |
-        timeout --signal=SIGINT 5 ./dist/autoeq_api || echo "Test completed - service started successfully"
+        timeout --signal=SIGINT 5 ./dist/autoeq_api || echo "Test completed"

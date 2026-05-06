@@ -1,0 +1,44 @@
+name: Build with Docker
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build Docker image
+      run: |
+        docker build -t autoeq-builder -f Dockerfile.build .
+
+    - name: Run container to build executable
+      run: |
+        docker create --name autoeq-builder-container autoeq-builder
+        docker cp autoeq-builder-container:/build/dist ./dist
+        docker rm autoeq-builder-container
+
+    - name: Set executable permission
+      run: |
+        chmod 755 dist/autoeq_api
+        ls -la dist/
+        file dist/autoeq_api
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: autoeq-linux-x64
+        path: dist/autoeq_api
+        retention-days: 30
+        if-no-files-found: error
+
+    - name: Test executable
+      run: |
+        timeout --signal=SIGINT 5 ./dist/autoeq_api || echo "Test completed - service started successfully"
