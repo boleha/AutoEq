@@ -8,8 +8,9 @@ from pathlib import Path
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, validator, root_validator, confloat, conlist, conint
-from typing import Union, Optional
+from pydantic import BaseModel, field_validator, model_validator, Field
+from typing import Union, Optional, Annotated
+from pydantic import ConfigDict
 import soundfile as sf
 from scipy.fft import fft
 
@@ -64,12 +65,12 @@ class MeasurementData(BaseModel):
 
 
 class Optimizer(BaseModel):
-    min_f: Optional[float]
-    max_f: Optional[float]
-    max_time: Optional[confloat(ge=0.0, le=0.5)]
-    min_change_rate: Optional[float]
-    min_std: Optional[float]
-    target_loss: Optional[float]
+    min_f: Optional[float] = None
+    max_f: Optional[float] = None
+    max_time: Optional[float] = Field(default=None, ge=0.0, le=0.5)
+    min_change_rate: Optional[float] = None
+    min_std: Optional[float] = None
+    target_loss: Optional[float] = None
 
 
 class FilterTypeEnum(str, Enum):
@@ -79,22 +80,22 @@ class FilterTypeEnum(str, Enum):
 
 
 class Filter(BaseModel):
-    type: Optional[str]
-    fc: Optional[float]
-    min_fc: Optional[float]
-    max_fc: Optional[float]
-    q: Optional[float]
-    min_q: Optional[float]
-    max_q: Optional[float]
-    gain: Optional[float]
-    min_gain: Optional[float]
-    max_gain: Optional[float]
+    type: Optional[str] = None
+    fc: Optional[float] = None
+    min_fc: Optional[float] = None
+    max_fc: Optional[float] = None
+    q: Optional[float] = None
+    min_q: Optional[float] = None
+    max_q: Optional[float] = None
+    gain: Optional[float] = None
+    min_gain: Optional[float] = None
+    max_gain: Optional[float] = None
 
 
 class PEQConfig(BaseModel):
-    optimizer: Optional[Optimizer]
-    filter_defaults: Optional[Filter]
-    filters: conlist(Filter, min_items=1)
+    optimizer: Optional[Optimizer] = None
+    filter_defaults: Optional[Filter] = None
+    filters: Annotated[list[Filter], Field(min_length=1)]
 
 
 class BitDepthEnum(int, Enum):
@@ -108,66 +109,75 @@ class PhaseEnum(str, Enum):
 
 
 class ResponseRequirements(BaseModel):
-    fr_f_step = DEFAULT_STEP
-    fr_fields: Optional[list[str]]
-    base64fp16 = False
+    fr_f_step: float = DEFAULT_STEP
+    fr_fields: Optional[list[str]] = None
+    base64fp16: bool = False
 
 
 class EqualizeRequest(BaseModel):
-    measurement: Optional[MeasurementData]
-    name: Optional[str]
-    source: Optional[str]
-    rig: Optional[str]
-    target: Optional[Union[str, MeasurementData]]
-    bass_boost_gain = DEFAULT_BASS_BOOST_GAIN
-    bass_boost_fc = DEFAULT_BASS_BOOST_FC
-    bass_boost_q = DEFAULT_BASS_BOOST_Q
-    treble_boost_gain = DEFAULT_TREBLE_BOOST_GAIN
-    treble_boost_fc = DEFAULT_TREBLE_BOOST_FC
-    treble_boost_q = DEFAULT_TREBLE_BOOST_Q
-    tilt = DEFAULT_TILT
+    model_config = ConfigDict(extra='allow')
+
+    measurement: Optional[MeasurementData] = None
+    name: Optional[str] = None
+    source: Optional[str] = None
+    rig: Optional[str] = None
+    target: Optional[Union[str, MeasurementData]] = None
+    bass_boost_gain: float = DEFAULT_BASS_BOOST_GAIN
+    bass_boost_fc: float = DEFAULT_BASS_BOOST_FC
+    bass_boost_q: float = DEFAULT_BASS_BOOST_Q
+    treble_boost_gain: float = DEFAULT_TREBLE_BOOST_GAIN
+    treble_boost_fc: float = DEFAULT_TREBLE_BOOST_FC
+    treble_boost_q: float = DEFAULT_TREBLE_BOOST_Q
+    tilt: float = DEFAULT_TILT
     fs: Optional[int] = DEFAULT_FS
     bit_depth: Optional[BitDepthEnum] = DEFAULT_BIT_DEPTH
     f_res: Optional[float] = DEFAULT_F_RES
     phase: Optional[PhaseEnum] = DEFAULT_PHASE
-    sound_signature: Optional[MeasurementData]
+    sound_signature: Optional[MeasurementData] = None
     sound_signature_smoothing_window_size: Optional[float] = DEFAULT_SOUND_SIGNATURE_SMOOTHING_WINDOW_SIZE
-    max_gain = DEFAULT_MAX_GAIN
-    max_slope = DEFAULT_MAX_SLOPE
-    window_size = DEFAULT_SMOOTHING_WINDOW_SIZE
-    treble_window_size = DEFAULT_TREBLE_SMOOTHING_WINDOW_SIZE
-    treble_f_lower = DEFAULT_TREBLE_F_LOWER
-    treble_f_upper = DEFAULT_TREBLE_F_UPPER
-    treble_gain_k = DEFAULT_TREBLE_GAIN_K
-    parametric_eq = False
+    max_gain: float = DEFAULT_MAX_GAIN
+    max_slope: float = DEFAULT_MAX_SLOPE
+    window_size: float = DEFAULT_SMOOTHING_WINDOW_SIZE
+    treble_window_size: float = DEFAULT_TREBLE_SMOOTHING_WINDOW_SIZE
+    treble_f_lower: float = DEFAULT_TREBLE_F_LOWER
+    treble_f_upper: float = DEFAULT_TREBLE_F_UPPER
+    treble_gain_k: float = DEFAULT_TREBLE_GAIN_K
+    parametric_eq: bool = False
     parametric_eq_config: Optional[Union[str, PEQConfig, list[Union[str, PEQConfig]]]] = '8_PEAKING_WITH_SHELVES'
-    fixed_band_eq = False
+    fixed_band_eq: bool = False
     fixed_band_eq_config: Optional[Union[str, PEQConfig]] = '10_BAND_GRAPHIC_EQ'
-    graphic_eq = False
-    convolution_eq = False
-    preamp = DEFAULT_PREAMP
-    response: Optional[ResponseRequirements]
+    graphic_eq: bool = False
+    convolution_eq: bool = False
+    preamp: float = DEFAULT_PREAMP
+    response: Optional[ResponseRequirements] = None
 
-    @root_validator
-    def only_one_eq_type(cls, values):
-        assert values.get('measurement') or (values.get('name') and values.get('source') and values.get('rig')), 'Measurement is required'
-        keys = ['parametric_eq', 'fixed_band_eq', 'equalizer_apo_graphic_eq', 'convolution_eq']
-        assert len([key for key in keys if values.get(key)]) < 2, 'Only one equalizer type is allowed'
+    @model_validator(mode='before')
+    def check_measurement_required(cls, values):
+        if isinstance(values, dict):
+            has_measurement = values.get('measurement')
+            has_named = values.get('name') and values.get('source') and values.get('rig')
+            if not has_measurement and not has_named:
+                raise ValueError('Measurement is required')
+            keys = ['parametric_eq', 'fixed_band_eq', 'equalizer_apo_graphic_eq', 'convolution_eq']
+            if sum(1 for key in keys if values.get(key)) >= 2:
+                raise ValueError('Only one equalizer type is allowed')
         return values
 
-    @validator('parametric_eq_config')
+    @field_validator('parametric_eq_config')
+    @classmethod
     def parametric_eq_config_name(cls, v):
-        if type(v) == str:
+        if isinstance(v, str):
             assert v in PEQ_CONFIGS, f'Unknown parametric eq config name "{v}"'
-        if type(v) == list:
+        if isinstance(v, list):
             for config in v:
-                if type(config) == str:
+                if isinstance(config, str):
                     assert config in PEQ_CONFIGS, f'Unknown parametric eq config name "{config}"'
         return v
 
-    @validator('fixed_band_eq_config')
+    @field_validator('fixed_band_eq_config')
+    @classmethod
     def fixed_band_eq_config_name(cls, v):
-        if type(v) == str:
+        if isinstance(v, str):
             assert v in PEQ_CONFIGS, f'Unknown fixed band eq config name "{v}"'
         return v
 
@@ -262,7 +272,7 @@ def equalize(req: EqualizeRequest):
             if type(parametric_eq_config) != list:
                 parametric_eq_config = [parametric_eq_config]
             parametric_eq_config = [
-                PEQ_CONFIGS[config] if type(config) == str else config.dict() for config in parametric_eq_config
+                PEQ_CONFIGS[config] if type(config) == str else config.model_dump() for config in parametric_eq_config
             ]
             # Limit maximum optimization time to 500 ms
             total_max_time = 0
@@ -290,7 +300,7 @@ def equalize(req: EqualizeRequest):
             if type(req.fixed_band_eq_config) == str:
                 fixed_band_eq_config = PEQ_CONFIGS[req.fixed_band_eq_config]
             else:
-                fixed_band_eq_config = req.fixed_band_eq_config.dict()
+                fixed_band_eq_config = req.fixed_band_eq_config.model_dump()
             if 'optimizer' not in fixed_band_eq_config:
                 fixed_band_eq_config['optimizer'] = {'max_time': 0.5}
             elif (
@@ -331,7 +341,7 @@ def equalize(req: EqualizeRequest):
             buf = BytesIO()
             sf.write(buf, fir, req.fs, bit_depth, format='WAV')
             buf.seek(0)
-            res['fir'] = b64encode(buf.read())
+            res['fir'] = b64encode(buf.read()).decode('ascii')
             # Add FIR frequency response
             f, mag = magnitude_response(fir, req.fs)
             fir_fr = FrequencyResponse(name='FIR', frequency=f[1:], raw=mag[1:])

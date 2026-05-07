@@ -488,6 +488,100 @@ async def equalize_csv_file(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class EqRangeInput(BaseModel):
+    frequency: List[float] = Field(..., description="频率点数组，单位Hz")
+    raw: List[float] = Field(..., description="对应频率的增益值数组，单位dB")
+
+
+class EqRange(BaseModel):
+    low: float = Field(default=20, description="EQ优化频率下限，单位Hz")
+    high: float = Field(default=20000, description="EQ优化频率上限，单位Hz")
+
+
+class EqRangeRequest(BaseModel):
+    select: EqRangeInput = Field(..., description="耳机实测频响曲线")
+    target: EqRangeInput = Field(..., description="目标频响曲线")
+    eq_range: EqRange = Field(default_factory=EqRange, description="EQ优化频率范围")
+    fs: int = Field(default=DEFAULT_FS, description="采样率，单位Hz")
+    config: str = Field(default="8_PEAKING_WITH_SHELVES", description="参数均衡器配置名称")
+    preamp: float = Field(default=DEFAULT_PREAMP, description="前置增益，单位dB")
+
+
+class EqRangeFilterOutput(BaseModel):
+    type: str = Field(..., description="滤波器类型: LowShelf / HighShelf / Peaking")
+    fc: float = Field(..., description="中心频率，单位Hz")
+    gain: float = Field(..., description="增益，单位dB")
+    q: float = Field(..., description="品质因数Q")
+
+
+class EqRangeResponse(BaseModel):
+    preamp: float = Field(..., description="前置增益，单位dB")
+    filters: List[EqRangeFilterOutput] = Field(..., description="滤波器参数列表")
+    eq_range: dict = Field(..., description="EQ优化频率范围")
+    fs: int = Field(..., description="采样率，单位Hz")
+
+
+@app.post("/eq-by-range", response_model=EqRangeResponse, summary="按频率范围生成参数均衡器")
+async def eq_by_range(request: EqRangeRequest):
+    try:
+        fr = FrequencyResponse(
+            name='select',
+            frequency=np.array(request.select.frequency),
+            raw=np.array(request.select.raw)
+        )
+        fr.interpolate()
+        fr.center()
+
+        target = FrequencyResponse(
+            name='target',
+            frequency=np.array(request.target.frequency),
+            raw=np.array(request.target.raw)
+        )
+        target.interpolate()
+        target.center()
+
+        fr.process(
+            target=target,
+            bass_boost_gain=DEFAULT_BASS_BOOST_GAIN,
+            bass_boost_fc=DEFAULT_BASS_BOOST_FC,
+            bass_boost_q=DEFAULT_BASS_BOOST_Q,
+            treble_boost_gain=DEFAULT_TREBLE_BOOST_GAIN,
+            treble_boost_fc=DEFAULT_TREBLE_BOOST_FC,
+            treble_boost_q=DEFAULT_TREBLE_BOOST_Q,
+            tilt=DEFAULT_TILT,
+            fs=request.fs,
+            max_gain=DEFAULT_MAX_GAIN,
+        )
+
+        peq_config = PEQ_CONFIGS.get(request.config, PEQ_CONFIGS['8_PEAKING_WITH_SHELVES'])
+        peqs = fr.optimize_parametric_eq(peq_config, request.fs, preamp=request.preamp)
+
+        low = request.eq_range.low
+        high = request.eq_range.high
+
+        all_filters = []
+        for peq in peqs:
+            for filt in peq.filters:
+                all_filters.append({
+                    'type': filt.__class__.__name__,
+                    'fc': filt.fc,
+                    'gain': filt.gain,
+                    'q': filt.q
+                })
+
+        range_filters = [f for f in all_filters if low <= f['fc'] <= high]
+
+        return {
+            'preamp': -max([p.max_gain for p in peqs]) if peqs else request.preamp,
+            'filters': range_filters,
+            'eq_range': {'low': low, 'high': high},
+            'fs': request.fs
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
